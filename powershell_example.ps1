@@ -1,25 +1,121 @@
-param(
-  [Parameter(Mandatory=$true)]
-  [string] $ExportType
+param (
+    [string]$folderPath,    # Path to the folder containing XML files
+    [string]$newQueueValue, # New value for the 'Queue' property (optional)
+    [string]$newAgentValue  # New value for the 'Agent' property (optional)
 )
 
-$scriptFolder = Join-Path (Get-Location).Path "ExportScripts"
-
-switch ($ExportType) {
-  # Existing logic for stocks, bonds, and oil
-  "stocks"  { & "$scriptFolder\export_stocks.py" }
-  "bonds"   { & "$scriptFolder\export_bonds.py" }
-  "oil"     { & "$scriptFolder\export_oil.py" }
-
-  # Handle cotton export with sub-scripts
-  "cotton" {
-    $cottonScripts = @("cotton_uk.py", "cotton_us.py", "cotton_pk.py", "cotton_ca.py")
-    foreach ($script in $cottonScripts) {
-      & "$scriptFolder\$script"
-    }
-  }
-
-  default   { Write-Error "Invalid export type: $ExportType" }
+# Check if the folder exists
+if (-not (Test-Path $folderPath)) {
+    Write-Host "Folder not found at: $folderPath"
+    exit
 }
 
-.\runexports.ps1 -ExportType stocks
+# Get all XML files in the folder
+$xmlFiles = Get-ChildItem -Path $folderPath -Filter "*.xml"
+
+if ($xmlFiles.Count -eq 0) {
+    Write-Host "No XML files found in the folder: $folderPath"
+    exit
+}
+
+# Function to ensure the 'properties' node exists
+function Ensure-PropertiesNode {
+    param (
+        [xml]$xmlContent
+    )
+    if (-not $xmlContent.properties) {
+        Write-Host "Adding missing <properties> node."
+        $propertiesNode = $xmlContent.CreateElement("properties")
+        $xmlContent.AppendChild($propertiesNode) | Out-Null
+    }
+}
+
+# Function to remove the 'Agent' property
+function Remove-AgentProperty {
+    param (
+        [xml]$xmlContent
+    )
+    $agentProperty = $xmlContent.properties.property | Where-Object { $_.name -eq "Agent" }
+    if ($agentProperty) {
+        $agentProperty.ParentNode.RemoveChild($agentProperty) | Out-Null
+        Write-Host "'Agent' property removed."
+    } else {
+        Write-Host "'Agent' property not found. No action taken."
+    }
+}
+
+# Function to update or add the 'Queue' property
+function Update-Or-AddQueueProperty {
+    param (
+        [xml]$xmlContent,
+        [string]$newQueueValue
+    )
+    Ensure-PropertiesNode -xmlContent $xmlContent
+    $queueProperty = $xmlContent.properties.property | Where-Object { $_.name -eq "Queue" }
+    if ($queueProperty) {
+        $queueProperty.value = $newQueueValue
+        Write-Host "'Queue' property updated to: $newQueueValue."
+    } else {
+        # Add 'Queue' property if not found
+        $newProperty = $xmlContent.CreateElement("property")
+        $newProperty.SetAttribute("name", "Queue")
+        $newProperty.SetAttribute("typename", "System.String")
+        $newProperty.SetAttribute("value", $newQueueValue)
+        $xmlContent.properties.AppendChild($newProperty) | Out-Null
+        Write-Host "'Queue' property added with value: $newQueueValue."
+    }
+}
+
+# Function to update or add the 'Agent' property
+function Update-Or-AddAgentProperty {
+    param (
+        [xml]$xmlContent,
+        [string]$newAgentValue
+    )
+    Ensure-PropertiesNode -xmlContent $xmlContent
+    $agentProperty = $xmlContent.properties.property | Where-Object { $_.name -eq "Agent" }
+    if ($agentProperty) {
+        $agentProperty.value = $newAgentValue
+        Write-Host "'Agent' property updated to: $newAgentValue."
+    } else {
+        # Add 'Agent' property if not found
+        $newProperty = $xmlContent.CreateElement("property")
+        $newProperty.SetAttribute("name", "Agent")
+        $newProperty.SetAttribute("typename", "System.String")
+        $newProperty.SetAttribute("value", $newAgentValue)
+        $xmlContent.properties.AppendChild($newProperty) | Out-Null
+        Write-Host "'Agent' property added with value: $newAgentValue."
+    }
+}
+
+# Process each XML file in the folder
+foreach ($file in $xmlFiles) {
+    Write-Host "Processing file: $($file.FullName)"
+    
+    # Load the XML content
+    $xmlContent = [xml](Get-Content -Path $file.FullName)
+    
+    # Ensure the <properties> node exists
+    Ensure-PropertiesNode -xmlContent $xmlContent
+
+    # Remove 'Agent' property if requested
+    if (-not $newAgentValue) {
+        Remove-AgentProperty -xmlContent $xmlContent
+    }
+
+    # Update or add 'Queue' property if a new value is provided
+    if ($newQueueValue) {
+        Update-Or-AddQueueProperty -xmlContent $xmlContent -newQueueValue $newQueueValue
+    }
+
+    # Update or add 'Agent' property if a new value is provided
+    if ($newAgentValue) {
+        Update-Or-AddAgentProperty -xmlContent $xmlContent -newAgentValue $newAgentValue
+    }
+
+    # Save the updated XML back to the file
+    $xmlContent.Save($file.FullName)
+    Write-Host "Changes saved to: $($file.FullName)"
+}
+
+Write-Host "Batch processing completed for all XML files in the folder: $folderPath"
