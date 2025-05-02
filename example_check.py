@@ -30,3 +30,15 @@ def get_unprocessed_files(files, conn_str):
     conn.close()
 
     return unprocessed_files
+
+
+files = [
+    "C:/data/input/file1.csv",
+    "C:/data/input/file2.csv",
+    "C:/data/input/file3.csv"
+]
+
+conn_str = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=your_server;DATABASE=your_db;UID=your_user;PWD=your_password"
+
+cleaned_files = get_unprocessed_files(files, conn_str)
+print(cleaned_files)
