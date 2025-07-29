@@ -35,8 +35,9 @@ function Search-JAMSFolderRecursive {
         # Get all entries from current folder
         $entries = Get-JAMSEntry -Folder $FolderPath
         
-        # Filter for jobs that have Events property and matching event handler
+        # Filter for jobs using ElementTypeName and matching event handler
         $jobs = $entries | Where-Object { 
+            $_.ElementTypeName -eq "Job" -and
             $_.Events -ne $null -and 
             ($_.Events | Where-Object { $_.Handler -eq $EventHandler })
         }
@@ -46,18 +47,9 @@ function Search-JAMSFolderRecursive {
             $folderJobs += $jobs
         }
         
-        # Get subfolders and search recursively
+        # Get subfolders using ElementTypeName
         $subfolders = $entries | Where-Object { 
-            $_.PSObject.Properties.Name -contains "EntryType" -and 
-            $_.EntryType -eq "Folder" 
-        }
-        
-        # Alternative way to identify folders if EntryType doesn't work
-        if (-not $subfolders) {
-            $subfolders = $entries | Where-Object { 
-                $_.PSObject.TypeNames -contains "JAMS.Folder" -or
-                ($_.PSObject.Properties.Name -notcontains "Events")
-            }
+            $_.ElementTypeName -eq "Folder"
         }
         
         foreach ($subfolder in $subfolders) {
@@ -93,11 +85,16 @@ if ($allJobs.Count -gt 0) {
     Write-Host "Total jobs found using event handler '$EventHandlerName': $($allJobs.Count)" -ForegroundColor Green
     Write-Host "`nJobs found:" -ForegroundColor Green
     
-    # Create detailed results with full folder path
-    $results = $allJobs | Select-Object Name, Folder, @{
-        Name = 'EventHandlers'
+    # Create detailed results with full folder path and event details
+    $results = $allJobs | Select-Object Name, Folder, ElementTypeName, @{
+        Name = 'MatchingEventHandlers'
         Expression = { 
             ($_.Events | Where-Object { $_.Handler -eq $EventHandlerName } | ForEach-Object { $_.Handler }) -join ', '
+        }
+    }, @{
+        Name = 'EventTypes'
+        Expression = { 
+            ($_.Events | Where-Object { $_.Handler -eq $EventHandlerName } | ForEach-Object { $_.EventType }) -join ', '
         }
     }
     
@@ -112,6 +109,12 @@ if ($allJobs.Count -gt 0) {
     Write-Host "`nSummary by folder:" -ForegroundColor Cyan
     $allJobs | Group-Object Folder | Sort-Object Name | ForEach-Object {
         Write-Host "  $($_.Name): $($_.Count) job(s)" -ForegroundColor White
+    }
+    
+    # Summary by ElementTypeName (should all be "Job")
+    Write-Host "`nSummary by Element Type:" -ForegroundColor Cyan
+    $allJobs | Group-Object ElementTypeName | Sort-Object Name | ForEach-Object {
+        Write-Host "  $($_.Name): $($_.Count) item(s)" -ForegroundColor White
     }
     
 } else {
